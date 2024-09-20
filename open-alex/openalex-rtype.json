@@ -1,0 +1,18 @@
+{
+  "book-section": "BOOK_SECTION",
+  "monograph": "BOOK",
+  "book-track": "BOOK_SECTION",
+  "journal-article": "ARTICLE",
+  "book-part": "BOOK_SECTION",
+  "other": "OTHER",
+  "book": "BOOK",
+  "journal-volume": "ISSUE",
+  "reference-entry": "RECORD_VIEW",
+  "proceedings-article": "ARTICLE",
+  "book-chapter": "BOOK_SECTION",
+  "proceedings": "BOOK",
+  "reference-book": "RECORD_VIEW",
+  "journal-issue": "ISSUE",
+  "dissertation": "ARTICLE",
+  "edited-book": "BOOK"
+}
