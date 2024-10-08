@@ -20,7 +20,7 @@
     "mocha": "^10.7.3"
   },
   "dependencies": {
-    "@ezpaarse-project/methal": "^2.1.0",
+    "@ezpaarse-project/methal": "file:../../ezpaarse-methal",
     "co": "^4.6.0",
     "crossref": "^1.2.1",
     "node-istex": "^1.3.0",
