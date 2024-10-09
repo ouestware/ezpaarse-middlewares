@@ -8,12 +8,10 @@ let methal;
  * Workaround to prevent processes to fail because this middleware is included by default
  * but the methal module has been renamed
  */
-try {
-  // eslint-disable-next-line global-require
-  methal = require('@ezpaarse-project/methal');
-} catch (e) {
-  methal = null;
-}
+
+// eslint-disable-next-line global-require
+methal = require('./methal');
+
 
 /**
 * Enrich ECs with hal data
@@ -287,7 +285,7 @@ module.exports = function () {
 
           if (!ec) {
             // Il faut virer l'EC car c'est une redirection de portail à portail.
-            done(new Error());
+            done(new Error("ignore EC has it's a redirect from portail to portail"));
             continue;
           }
 
@@ -313,6 +311,7 @@ module.exports = function () {
       if (doc) {
         ec['hal_docid']         = doc.docid;
         ec['hal_identifiant']   = doc.halId_s;
+        ec['hal_doi']           = doc.doiId_s;
         ec['publication_title'] = (doc.title_s || [''])[0];
         ec['hal_tampons']       = (doc.collId_i || []).join(',');
         ec['hal_tampons_name']  = (doc.collCode_s || []).join(',');
@@ -323,6 +322,7 @@ module.exports = function () {
         // Formatage du document à mettre en cache
         cacheDoc = [];
         cacheDoc['hal_docid']         = ec.hal_docid;
+        cacheDoc['hal_doi']           = ec.hal_doi;
         cacheDoc['hal_identifiant']   = ec.hal_identifiant;
         cacheDoc['publication_title'] = ec.publication_title;
         cacheDoc['hal_tampons']       = ec.hal_tampons;
@@ -350,7 +350,6 @@ module.exports = function () {
       }
 
       const redirected = yield addSiteData(ec, sidDepot);
-
       return redirected ? null : ec;
     });
   }
@@ -425,9 +424,9 @@ module.exports = function () {
        * Mais il est peu probable que ça arrive.
        */
       const opts = {
-        fields: 'docid,halId_s,title_s,collId_i,collCode_s,domain_s,sid_i,status_i',
+        fields: 'docid,halId_s,doiId_s,title_s,collId_i,collCode_s,domain_s,sid_i,status_i',
         rows: packetSize * 2,
-        core: 'hal'
+        core: 'search'
       };
 
       methal.find(search, opts, (err, docs) => {
@@ -453,8 +452,8 @@ module.exports = function () {
 
     return new Promise((resolve, reject) => {
       const opts = {
-        core: 'hal',
-        fields: 'docid,halId_s,title_s,collId_i,collCode_s,domain_s,sid_i,status_i'
+        core: 'search',
+        fields: 'docid,halId_s,doiId_s,title_s,collId_i,collCode_s,domain_s,sid_i,status_i'
       };
 
       methal.findOne(search, opts, (err, doc) => {
