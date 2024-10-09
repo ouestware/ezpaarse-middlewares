@@ -61,7 +61,7 @@ module.exports = function () {
     cache.collection.updateOne(
       { id: trackCode },
       { $inc: { counter: 1 } },
-      { upsert: true },
+      { upsert: true }).then(()=>callback()).catch(
       err => {
         if (err && retry) {
           return increment(trackCode, false, callback);
@@ -78,7 +78,7 @@ module.exports = function () {
    * @param {Function} callback
    */
   function clearCache(callback) {
-    cache.collection.drop(err => {
+    cache.collection.drop().then(()=>callback()).catch(err => {
       if (err) { self.logger.error('robots: failed to clear cache'); }
       callback();
     });
@@ -89,22 +89,29 @@ module.exports = function () {
    * @param {Function} callback
    */
   function persist(callback) {
-    cache.collection.find({ counter: { $gt: threshold } })
-      .project({ _id: 0, id: 1, counter: 1 })
-      .toArray((err, docs) => {
-        if (err) {
+    self.logger.info("robots: persist");
+    try {
+      cache.collection.find({ counter: { $gt: threshold } })
+        .project({ _id: 0, id: 1, counter: 1 })
+        .toArray().then((docs) => {
+          report.set('general', 'robots-number', docs.length);
+          self.logger.info(`robots: found ${docs.length}`);
+
+          fs.writeFile(path.resolve(jobPath, 'robots.json'), JSON.stringify(docs, null, 2), err => {
+            if (err) {
+              self.logger.error('robots: failed to persist robots');
+            }
+            else self.logger.info("robots: file written");
+            return callback();
+          });
+        }).catch(() => {
           self.logger.error('robots: failed to persist robots');
           return callback();
-        }
-
-        report.set('general', 'robots-number', docs.length);
-
-        fs.writeFile(path.resolve(jobPath, 'robots.json'), JSON.stringify(docs, null, 2), err => {
-          if (err) {
-            self.logger.error('robots: failed to persist robots');
-          }
-          return callback();
         });
-      });
+    }
+    catch (error) {
+      self.logger.error(`robots: failed to persist robots: ${error+''}`);
+      return callback();
+    }
   }
 };
