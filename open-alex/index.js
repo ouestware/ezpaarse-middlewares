@@ -8,39 +8,43 @@ const cache = ezpaarse.lib('cache')('openalex');
 // internal deps
 const { doiPattern } = require('./utils');
 const openAlexFields = require('./openalex-fields.json');
+const { OpenAlexFields, ecFromOpenAlexWork } = require('./open-alex');
+const { uniq } = require('lodash');
 
 /**
  * Enrich ECs with crossref data
  */
 module.exports = function () {
+  /**
+   * INIT
+   */
   const self = this;
   const req = this.request;
   const report = this.report;
 
+  /**
+   * CONFIG
+   */
+
   const disabled = /^false$/i.test(req.header('openalex-enrich'));
   const cacheEnabled = !/^false$/i.test(req.header('openalex-cache'));
+  let mailto = req.header('openalex-mailto') || 'mailto:ezteam@couperin.org';
 
-  if (disabled) {
-    self.logger.verbose('OpenAlex enrichment not activated');
-    return function (ec, next) {
-      next();
-    };
-  }
-
-  let mailto = req.header('openalex-mailto');
-
-  if (!mailto) {
-    mailto = 'mailto:ezteam@couperin.org';
-  }
-
-  self.logger.verbose(
-    'OpenAlex cache: %s',
-    cacheEnabled ? 'enabled' : 'disabled',
-  );
-
+  const queryHeaders = {
+    'user-agent': `ezPAARSE (https://readmetrics.org; ${mailto})`,
+  };
   // Strategy to adopt when an enrichment reaches maxTries : abort, ignore, retry
   let onFail = (req.header('openalex-on-fail') || 'abort').toLowerCase();
   let onFailValues = ['abort', 'ignore', 'retry'];
+  const openAlexFieldsHeader = req.header('openalex-fields');
+  // default to all defined fields
+  let neededOpenAlexFields = values(OpenAlexFields).map((f) => f.openAlexField);
+  if (openAlexFieldsHeader) {
+    // if a restricted list is provided in header use it but make sure it's a known oa_field
+    neededOpenAlexFields = openAlexFieldsHeader
+      .split('|')
+      .filter((f) => neededOpenAlexFields.includes(f));
+  }
 
   if (onFail && !onFailValues.includes(onFail)) {
     const err = new Error(
@@ -49,16 +53,31 @@ module.exports = function () {
     err.status = 400;
     return err;
   }
+
+  if (disabled) {
+    self.logger.verbose('OpenAlex enrichment not activated');
+    return function (ec, next) {
+      next();
+    };
+  }
+
+  self.logger.verbose(
+    'OpenAlex cache: %s',
+    cacheEnabled ? 'enabled' : 'disabled',
+  );
+
   //new fields created by the middleware
-  Object.entries(openAlexFields).map(([_, outputField]) => {
+  neededOpenAlexFields.forEach((outputField) => {
     if (this.job.outputFields.added.indexOf(outputField) === -1) {
       this.job.outputFields.added.push(outputField);
     }
   });
+  const doiField = req.header('openalex-doi-field') || 'doi';
 
   // API MANAGEMENT CONFIGURATION
   const ttl = parseInt(req.header('openalex-ttl')) || 3600 * 24 * 7;
-  let throttle = parseInt(req.header('openalex-throttle')) || 200;
+  const defaultThrottle = parseInt(req.header('openalex-throttle')) || 200;
+  let throttle = defaultThrottle;
   // Maximum number of DOIs to query in a single request
   let packetSize = parseInt(req.header('openalex-paquet-size')) || 100;
   if (packetSize > 100) {
@@ -165,20 +184,21 @@ module.exports = function () {
         if (!ec) {
           return packet;
         }
+        const doi = ec[doiField];
 
-        if (!ec.doi) {
+        if (!doi) {
           done();
           continue;
         }
 
-        if (ec.doi && !doiPattern.test(ec.doi)) {
+        if (doi && !doiPattern.test(doi)) {
           report.inc('general', 'openalex-invalid-dois');
           done();
           continue;
         }
 
-        if (ec.doi && cacheEnabled) {
-          const cachedDoc = yield checkCache(ec.doi);
+        if (doi && cacheEnabled) {
+          const cachedDoc = yield checkCache(doi);
 
           if (cachedDoc) {
             aggregate(cachedDoc, ec);
@@ -188,8 +208,8 @@ module.exports = function () {
         }
 
         packet.ecs.push([ec, done]);
-        if (ec.doi) {
-          packet.doi.add(ec.doi);
+        if (doi) {
+          packet.doi.add(doi);
         }
       }
 
@@ -273,10 +293,10 @@ module.exports = function () {
         }
 
         for (const item of list) {
-          let { DOI: doi } = item;
+          let { doi } = item;
 
           if (doi) {
-            doi = doi.toLowerCase();
+            doi = doi.toLowerCase().replace('https://doi.org/', '');
             results.set(doi, item);
 
             try {
@@ -288,8 +308,8 @@ module.exports = function () {
         }
 
         for (const [ec, done] of packet.ecs) {
-          if (ec.doi) {
-            const doi = ec.doi.toLowerCase();
+          if (ec[doiField]) {
+            const doi = ec[doiField].toLowerCase();
 
             if (results.has(doi)) {
               aggregate(results.get(doi), ec);
@@ -321,26 +341,44 @@ module.exports = function () {
       const limitHeader = headers['X-RateLimit-Limit'];
       const resetTimeHeader = headers['X-RateLimit-reset'];
 
+      if (
+        error.response &&
+        error.response.headers &&
+        error.response.headers['x-rateLimit-reset']
+      ) {
+        const resetTime = error.response.headers['x-rateLimit-reset'];
+        if (resetTime) {
+          const resetDate = new Date(resetTime);
+          const timeToReset = resetDate.getTime() - Date.now() + 1000;
+
+          // schedule a retry
+          // throttle till the reset date given in the API response
+          const newThrottle = timeToReset; // in milliseconds
+          console.log(`Waiting ${timeToReset / 1000}s till ${resetDate}`);
+
+          if (newThrottle !== throttle) {
+            const newRate = Math.ceil((1000 / newThrottle) * 100) / 100;
+            const oldRate = Math.ceil((1000 / throttle) * 100) / 100;
+            // eslint-disable-next-line max-len
+            self.logger.info(
+              `OpenAlex: throttle changed from ${throttle}ms (${oldRate}q/s) to ${newThrottle}ms (${newRate}q/s)`,
+            );
+            throttle = newThrottle;
+          }
+        }
+      } else {
+        console.log("Can't retrieve ratelimit_reset: quitting");
+        console.log(JSON.stringify(error.response, null, 2));
+        throw error;
+      }
+
       if (!limitHeader || !resetTimeHeader) {
         return;
       }
 
-      const nbRequests = Number.parseInt(limitHeader, 10);
-      const retryDate = new Date(resetTimeHeader);
-
-      // throttle till the reset date given in the API response
-      const newThrottle = retryDate - new Date(); // in milliseconds
-
-      if (newThrottle !== throttle) {
-        const newRate = Math.ceil((1000 / newThrottle) * 100) / 100;
-        const oldRate = Math.ceil((1000 / throttle) * 100) / 100;
-        // eslint-disable-next-line max-len
-        self.logger.info(
-          `OpenAlex: throttle changed from ${throttle}ms (${oldRate}q/s) to ${newThrottle}ms (${newRate}q/s)`,
-        );
-        throttle = newThrottle;
-      }
+      return true;
     }
+    return false;
   }
 
   function handleResponseTime(responseTime) {
@@ -370,11 +408,9 @@ module.exports = function () {
           qs: {
             // use filter to list the doi we want to retrieve
             //filter=doi:https://doi.org/10.1371/journal.pone.0266781|https://doi.org/10.1371/journal.pone.0267149
-            filter: values.map((v) => `${property}:${v}`).join('|'),
+            filter: `${property}:${values.join('|')}`,
             // use select to get only the needed field
-            select: Object.values(openAlexFields)
-              .map((f) => f.split('.')[0])
-              .join(','),
+            select: uniq([...neededOpenAlexFields, 'doi']).join(','),
             // make sure to retrieve the maximum amount of element
             'per-page': packetSize,
           },
@@ -397,7 +433,7 @@ module.exports = function () {
               new Error('authentication error (is the token valid?)'),
             );
           }
-          if (status !== 429 && status >= 400) {
+          if (status >= 400) {
             return reject(new Error(`request failed with status ${status}`));
           }
 
@@ -405,6 +441,11 @@ module.exports = function () {
 
           if (!Array.isArray(list)) {
             return reject(new Error('got invalid response from the API'));
+          }
+
+          // request succeeded: get throttle to default
+          if (throttle !== defaultThrottle) {
+            throttle = defaultThrottle;
           }
 
           return resolve(list);
@@ -432,15 +473,6 @@ module.exports = function () {
     if (!item) {
       return;
     }
-    Object.entries(openAlexFields).map(([oaField, resultField]) => {
-      const oaFields = oaField.split('.');
-      //TODO: use get () from lodash instead https://lodash.com/docs/4.17.15#get
-      let value = item;
-      oaFields.forEach((f) => {
-        if (value[f]) value = value[f];
-      });
-      //TODO: check instanceof value !== 'Object' ?
-      ec[resultField] = value;
-    });
+    return { ...ec, ...ecFromOpenAlexWork(item) };
   }
 };

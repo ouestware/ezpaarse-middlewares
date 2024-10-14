@@ -29,6 +29,12 @@
     },
     {
       "name": "openalex-base-wait-time"
+    },
+    {
+      "name": "openalex-fields"
+    },
+    {
+      "name": "openalex-doi-field"
     }
   ]
 }
