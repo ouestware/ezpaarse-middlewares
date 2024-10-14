@@ -1,13 +1,13 @@
-"use strict";
+'use strict';
 
 // deps
-const co = require("co");
-const request = require("request");
+const co = require('co');
+const request = require('request');
 // ezpaarse deps
-const cache = ezpaarse.lib("cache")("openalex");
+const cache = ezpaarse.lib('cache')('openalex');
 // internal deps
-const { doiPattern } = require("./utils");
-const openAlexFields = require("./openalex-fields.json");
+const { doiPattern } = require('./utils');
+const openAlexFields = require('./openalex-fields.json');
 
 /**
  * Enrich ECs with crossref data
@@ -17,34 +17,34 @@ module.exports = function () {
   const req = this.request;
   const report = this.report;
 
-  const disabled = /^false$/i.test(req.header("openalex-enrich"));
-  const cacheEnabled = !/^false$/i.test(req.header("openalex-cache"));
+  const disabled = /^false$/i.test(req.header('openalex-enrich'));
+  const cacheEnabled = !/^false$/i.test(req.header('openalex-cache'));
 
   if (disabled) {
-    self.logger.verbose("OpenAlex enrichment not activated");
+    self.logger.verbose('OpenAlex enrichment not activated');
     return function (ec, next) {
       next();
     };
   }
 
-  let mailto = req.header("openalex-mailto");
+  let mailto = req.header('openalex-mailto');
 
   if (!mailto) {
-    mailto = "mailto:ezteam@couperin.org";
+    mailto = 'mailto:ezteam@couperin.org';
   }
 
   self.logger.verbose(
-    "OpenAlex cache: %s",
-    cacheEnabled ? "enabled" : "disabled"
+    'OpenAlex cache: %s',
+    cacheEnabled ? 'enabled' : 'disabled',
   );
 
   // Strategy to adopt when an enrichment reaches maxTries : abort, ignore, retry
-  let onFail = (req.header("openalex-on-fail") || "abort").toLowerCase();
-  let onFailValues = ["abort", "ignore", "retry"];
+  let onFail = (req.header('openalex-on-fail') || 'abort').toLowerCase();
+  let onFailValues = ['abort', 'ignore', 'retry'];
 
   if (onFail && !onFailValues.includes(onFail)) {
     const err = new Error(
-      `openalex-On-Fail should be one of: ${onFailValues.join(", ")}`
+      `openalex-On-Fail should be one of: ${onFailValues.join(', ')}`,
     );
     err.status = 400;
     return err;
@@ -57,20 +57,20 @@ module.exports = function () {
   });
 
   // API MANAGEMENT CONFIGURATION
-  const ttl = parseInt(req.header("openalex-ttl")) || 3600 * 24 * 7;
-  let throttle = parseInt(req.header("openalex-throttle")) || 200;
+  const ttl = parseInt(req.header('openalex-ttl')) || 3600 * 24 * 7;
+  let throttle = parseInt(req.header('openalex-throttle')) || 200;
   // Maximum number of DOIs to query in a single request
-  let packetSize = parseInt(req.header("openalex-paquet-size")) || 100;
+  let packetSize = parseInt(req.header('openalex-paquet-size')) || 100;
   if (packetSize > 100) {
     packetSize = 100;
     self.logger.verbose("OpenAlex paquet size can't be more than 100");
   }
   // Minimum number of ECs to keep before resolving them
-  let bufferSize = parseInt(req.header("openalex-buffer-size"));
+  let bufferSize = parseInt(req.header('openalex-buffer-size'));
   // Maximum enrichment attempts
-  let maxTries = parseInt(req.header("openalex-max-tries"));
+  let maxTries = parseInt(req.header('openalex-max-tries'));
   // Base wait time after a request fails
-  let baseWaitTime = parseInt(req.header("openalex-base-wait-time"));
+  let baseWaitTime = parseInt(req.header('openalex-base-wait-time'));
 
   if (isNaN(bufferSize)) {
     bufferSize = 1000;
@@ -86,26 +86,26 @@ module.exports = function () {
   let busy = false;
   let finalCallback = null;
 
-  self.logger.verbose("OpenAlex enrichment activated");
-  self.logger.verbose("OpenAlex throttle: %dms", throttle);
-  self.logger.verbose("OpenAlex paquet size: %d", packetSize);
-  self.logger.verbose("OpenAlex buffer size: %d", bufferSize);
+  self.logger.verbose('OpenAlex enrichment activated');
+  self.logger.verbose('OpenAlex throttle: %dms', throttle);
+  self.logger.verbose('OpenAlex paquet size: %d', packetSize);
+  self.logger.verbose('OpenAlex buffer size: %d', bufferSize);
 
-  report.set("general", "openalex-queries", 0);
-  report.set("general", "openalex-fails", 0);
-  report.set("general", "openalex-invalid-dois", 0);
+  report.set('general', 'openalex-queries', 0);
+  report.set('general', 'openalex-fails', 0);
+  report.set('general', 'openalex-invalid-dois', 0);
 
   let minResponseTime = -1;
   let maxResponseTime = -1;
-  report.set("general", "openalex-min-response-time", minResponseTime);
-  report.set("general", "openalex-max-response-time", maxResponseTime);
+  report.set('general', 'openalex-min-response-time', minResponseTime);
+  report.set('general', 'openalex-max-response-time', maxResponseTime);
 
   return new Promise(function (resolve, reject) {
     cache.checkIndexes(ttl, function (err) {
       if (err) {
-        self.logger.error("OpenAlex: failed to ensure indexes");
+        self.logger.error('OpenAlex: failed to ensure indexes');
         return reject(
-          new Error("failed to ensure indexes for the cache of OpenAlex")
+          new Error('failed to ensure indexes for the cache of OpenAlex'),
         );
       }
 
@@ -172,7 +172,7 @@ module.exports = function () {
         }
 
         if (ec.doi && !doiPattern.test(ec.doi)) {
-          report.inc("general", "openalex-invalid-dois");
+          report.inc('general', 'openalex-invalid-dois');
           done();
           continue;
         }
@@ -221,7 +221,7 @@ module.exports = function () {
         const packet = yield getPacket();
 
         if (packet.ecs.length === 0 || packet.doi.size === 0) {
-          self.logger.silly("OpenAlex: no doi in the paquet");
+          self.logger.silly('OpenAlex: no doi in the paquet');
           yield new Promise((resolve) => {
             setImmediate(resolve);
           });
@@ -229,7 +229,7 @@ module.exports = function () {
         }
 
         const results = new Map();
-        const identifier = "doi";
+        const identifier = 'doi';
 
         if (packet[identifier].size === 0) {
           continue;
@@ -239,33 +239,33 @@ module.exports = function () {
 
         while (!list) {
           if (tries >= maxTries) {
-            if (onFail === "ignore") {
+            if (onFail === 'ignore') {
               self.logger.error(
-                `OpenAlex: ignoring packet enrichment after ${maxTries} failed attempts`
+                `OpenAlex: ignoring packet enrichment after ${maxTries} failed attempts`,
               );
               packet.ecs.forEach(([, done]) => done());
               return;
             }
 
-            if (onFail === "abort") {
+            if (onFail === 'abort') {
               const err = new Error(
-                `Failed to query OpenAlex ${maxTries} times in a row`
+                `Failed to query OpenAlex ${maxTries} times in a row`,
               );
               return Promise.reject(err);
             }
           }
 
           yield wait(
-            tries === 0 ? throttle : baseWaitTime * Math.pow(2, tries)
+            tries === 0 ? throttle : baseWaitTime * Math.pow(2, tries),
           );
 
           try {
             list = yield queryOpenAlex(
               identifier,
-              Array.from(packet[identifier])
+              Array.from(packet[identifier]),
             );
           } catch (e) {
-            report.inc("general", "openalex-fails");
+            report.inc('general', 'openalex-fails');
             self.logger.error(`OpenAlex: ${e.message}`);
           }
 
@@ -282,7 +282,7 @@ module.exports = function () {
             try {
               yield cacheResult(doi, item);
             } catch (e) {
-              report.inc("general", "openalex-cache-fail");
+              report.inc('general', 'openalex-cache-fail');
             }
           }
         }
@@ -297,7 +297,7 @@ module.exports = function () {
               try {
                 yield cacheResult(doi, {});
               } catch (e) {
-                report.inc("general", "openalex-cache-fail");
+                report.inc('general', 'openalex-cache-fail');
               }
             }
           }
@@ -318,8 +318,8 @@ module.exports = function () {
     //rate limit
     if (response && response.statusCode && response.statusCode === 429) {
       const headers = (response && response.headers) || {};
-      const limitHeader = headers["X-RateLimit-Limit"];
-      const resetTimeHeader = headers["X-RateLimit-reset"];
+      const limitHeader = headers['X-RateLimit-Limit'];
+      const resetTimeHeader = headers['X-RateLimit-reset'];
 
       if (!limitHeader || !resetTimeHeader) {
         return;
@@ -336,7 +336,7 @@ module.exports = function () {
         const oldRate = Math.ceil((1000 / throttle) * 100) / 100;
         // eslint-disable-next-line max-len
         self.logger.info(
-          `OpenAlex: throttle changed from ${throttle}ms (${oldRate}q/s) to ${newThrottle}ms (${newRate}q/s)`
+          `OpenAlex: throttle changed from ${throttle}ms (${oldRate}q/s) to ${newThrottle}ms (${newRate}q/s)`,
         );
         throttle = newThrottle;
       }
@@ -346,37 +346,37 @@ module.exports = function () {
   function handleResponseTime(responseTime) {
     if (minResponseTime < 0 || responseTime < minResponseTime) {
       minResponseTime = responseTime;
-      report.set("general", "openalex-min-response-time", responseTime);
+      report.set('general', 'openalex-min-response-time', responseTime);
     }
     if (responseTime > maxResponseTime) {
       maxResponseTime = responseTime;
-      report.set("general", "openalex-max-response-time", responseTime);
+      report.set('general', 'openalex-max-response-time', responseTime);
     }
   }
 
   function queryOpenAlex(property, values) {
-    report.inc("general", "openalex-queries");
+    report.inc('general', 'openalex-queries');
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
 
       request(
         {
-          method: "GET",
-          url: "https://api.openalex.org/works",
+          method: 'GET',
+          url: 'https://api.openalex.org/works',
           timeout: 60000,
           headers: queryHeaders,
           json: true,
           qs: {
             // use filter to list the doi we want to retrieve
             //filter=doi:https://doi.org/10.1371/journal.pone.0266781|https://doi.org/10.1371/journal.pone.0267149
-            filter: values.map((v) => `${property}:${v}`).join("|"),
+            filter: values.map((v) => `${property}:${v}`).join('|'),
             // use select to get only the needed field
             select: Object.values(openAlexFields)
-              .map((f) => f.split(".")[0])
-              .join(","),
+              .map((f) => f.split('.')[0])
+              .join(','),
             // make sure to retrieve the maximum amount of element
-            "per-page": packetSize,
+            'per-page': packetSize,
           },
         },
         (err, response, body) => {
@@ -390,11 +390,11 @@ module.exports = function () {
           const status = response && response.statusCode;
 
           if (!status) {
-            return reject(new Error("request failed with no status code"));
+            return reject(new Error('request failed with no status code'));
           }
           if (status === 401) {
             return reject(
-              new Error("authentication error (is the token valid?)")
+              new Error('authentication error (is the token valid?)'),
             );
           }
           if (status !== 429 && status >= 400) {
@@ -404,11 +404,11 @@ module.exports = function () {
           const list = body && body.message && body.message.results;
 
           if (!Array.isArray(list)) {
-            return reject(new Error("got invalid response from the API"));
+            return reject(new Error('got invalid response from the API'));
           }
 
           return resolve(list);
-        }
+        },
       );
     });
   }
@@ -433,7 +433,7 @@ module.exports = function () {
       return;
     }
     Object.entries(openAlexFields).map(([oaField, resultField]) => {
-      const oaFields = oaField.split(".");
+      const oaFields = oaField.split('.');
       //TODO: use get () from lodash instead https://lodash.com/docs/4.17.15#get
       let value = item;
       oaFields.forEach((f) => {
