@@ -11,7 +11,13 @@
     "it": false,
     "before": false
   },
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "plugins": ["@typescript-eslint","react-refresh"],
   "extends": [
-    "prettier"
-  ]
+    "eslint:recommended", // ESLint recommended rules
+    "prettier", // Prettier rules
+    "plugin:prettier/recommended" // Prettier plugin integration
+  ],
+  "ignorePatterns": ["node_modules"]
 }
