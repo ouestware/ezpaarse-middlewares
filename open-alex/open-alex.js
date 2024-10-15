@@ -12,7 +12,7 @@ function getTopicsLabels(openAlexWork, topicLevel) {
     : '';
 }
 
-export const OpenAlexFields = {
+const OpenAlexFields = {
   oa_id: {
     openAlexField: 'id',
     getEcData: (openAlexWork) => (openAlexWork ? openAlexWork.id : ''),
@@ -107,6 +107,11 @@ export const OpenAlexFields = {
 /**
  * Methods to create EC new data field from an OpenAlex Object
  */
-export function ecFromOpenAlexWork(openAlexWork) {
+function ecFromOpenAlexWork(openAlexWork) {
   return mapValues(OpenAlexFields, (f) => f.getEcData(openAlexWork));
 }
+
+module.exports = {
+  OpenAlexFields,
+  ecFromOpenAlexWork,
+};
