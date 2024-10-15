@@ -7,9 +7,8 @@ const request = require('request');
 const cache = ezpaarse.lib('cache')('openalex');
 // internal deps
 const { doiPattern } = require('./utils');
-const openAlexFields = require('./openalex-fields.json');
 const { OpenAlexFields, ecFromOpenAlexWork } = require('./open-alex');
-const { uniq } = require('lodash');
+const { uniq, values } = require('lodash');
 
 /**
  * Enrich ECs with crossref data
@@ -47,9 +46,7 @@ module.exports = function () {
   }
 
   if (onFail && !onFailValues.includes(onFail)) {
-    const err = new Error(
-      `openalex-On-Fail should be one of: ${onFailValues.join(', ')}`,
-    );
+    const err = new Error(`openalex-On-Fail should be one of: ${onFailValues.join(', ')}`);
     err.status = 400;
     return err;
   }
@@ -61,10 +58,7 @@ module.exports = function () {
     };
   }
 
-  self.logger.verbose(
-    'OpenAlex cache: %s',
-    cacheEnabled ? 'enabled' : 'disabled',
-  );
+  self.logger.verbose('OpenAlex cache: %s', cacheEnabled ? 'enabled' : 'disabled');
 
   //new fields created by the middleware
   neededOpenAlexFields.forEach((outputField) => {
@@ -123,9 +117,7 @@ module.exports = function () {
     cache.checkIndexes(ttl, function (err) {
       if (err) {
         self.logger.error('OpenAlex: failed to ensure indexes');
-        return reject(
-          new Error('failed to ensure indexes for the cache of OpenAlex'),
-        );
+        return reject(new Error('failed to ensure indexes for the cache of OpenAlex'));
       }
 
       resolve(process);
@@ -234,10 +226,7 @@ module.exports = function () {
 
   function drainBuffer() {
     return co(function* () {
-      while (
-        buffer.length >= bufferSize ||
-        (finalCallback && buffer.length > 0)
-      ) {
+      while (buffer.length >= bufferSize || (finalCallback && buffer.length > 0)) {
         const packet = yield getPacket();
 
         if (packet.ecs.length === 0 || packet.doi.size === 0) {
@@ -268,22 +257,15 @@ module.exports = function () {
             }
 
             if (onFail === 'abort') {
-              const err = new Error(
-                `Failed to query OpenAlex ${maxTries} times in a row`,
-              );
+              const err = new Error(`Failed to query OpenAlex ${maxTries} times in a row`);
               return Promise.reject(err);
             }
           }
 
-          yield wait(
-            tries === 0 ? throttle : baseWaitTime * Math.pow(2, tries),
-          );
+          yield wait(tries === 0 ? throttle : baseWaitTime * Math.pow(2, tries));
 
           try {
-            list = yield queryOpenAlex(
-              identifier,
-              Array.from(packet[identifier]),
-            );
+            list = yield queryOpenAlex(identifier, Array.from(packet[identifier]));
           } catch (e) {
             report.inc('general', 'openalex-fails');
             self.logger.error(`OpenAlex: ${e.message}`);
@@ -341,12 +323,8 @@ module.exports = function () {
       const limitHeader = headers['X-RateLimit-Limit'];
       const resetTimeHeader = headers['X-RateLimit-reset'];
 
-      if (
-        error.response &&
-        error.response.headers &&
-        error.response.headers['x-rateLimit-reset']
-      ) {
-        const resetTime = error.response.headers['x-rateLimit-reset'];
+      if (response && response.headers && response.headers['x-rateLimit-reset']) {
+        const resetTime = response.headers['x-rateLimit-reset'];
         if (resetTime) {
           const resetDate = new Date(resetTime);
           const timeToReset = resetDate.getTime() - Date.now() + 1000;
@@ -368,8 +346,8 @@ module.exports = function () {
         }
       } else {
         console.log("Can't retrieve ratelimit_reset: quitting");
-        console.log(JSON.stringify(error.response, null, 2));
-        throw error;
+        console.log(JSON.stringify(response, null, 2));
+        throw new Error("Got 429 error but can't retrieve ratelimit_reset: quitting");
       }
 
       if (!limitHeader || !resetTimeHeader) {
@@ -429,9 +407,7 @@ module.exports = function () {
             return reject(new Error('request failed with no status code'));
           }
           if (status === 401) {
-            return reject(
-              new Error('authentication error (is the token valid?)'),
-            );
+            return reject(new Error('authentication error (is the token valid?)'));
           }
           if (status >= 400) {
             return reject(new Error(`request failed with status ${status}`));
