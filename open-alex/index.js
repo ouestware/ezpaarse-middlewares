@@ -2,16 +2,16 @@
 
 // deps
 const co = require('co');
-const request = require('request');
 // ezpaarse deps
 const cache = ezpaarse.lib('cache')('openalex');
 // internal deps
 const { doiPattern } = require('./utils');
-const { OpenAlexFields, ecFromOpenAlexWork } = require('./open-alex');
-const { uniq, values } = require('lodash');
+const { OpenAlexFields, updateEcWithOpenAlexWork } = require('./open-alex');
+const { uniq, keys } = require('lodash');
+const { default: axios } = require('axios');
 
 /**
- * Enrich ECs with crossref data
+ * Enrich ECs with OpenAlex data
  */
 module.exports = function () {
   /**
@@ -37,7 +37,7 @@ module.exports = function () {
   let onFailValues = ['abort', 'ignore', 'retry'];
   const openAlexFieldsHeader = req.header('openalex-fields');
   // default to all defined fields
-  let neededOpenAlexFields = values(OpenAlexFields).map((f) => f.openAlexField);
+  let neededOpenAlexFields = keys(OpenAlexFields);
   if (openAlexFieldsHeader) {
     // if a restricted list is provided in header use it but make sure it's a known oa_field
     neededOpenAlexFields = openAlexFieldsHeader
@@ -319,10 +319,6 @@ module.exports = function () {
   function handleOpenAlexRateLimit(response) {
     //rate limit
     if (response && response.statusCode && response.statusCode === 429) {
-      const headers = (response && response.headers) || {};
-      const limitHeader = headers['X-RateLimit-Limit'];
-      const resetTimeHeader = headers['X-RateLimit-reset'];
-
       if (response && response.headers && response.headers['x-rateLimit-reset']) {
         const resetTime = response.headers['x-rateLimit-reset'];
         if (resetTime) {
@@ -345,18 +341,9 @@ module.exports = function () {
           }
         }
       } else {
-        console.log("Can't retrieve ratelimit_reset: quitting");
-        console.log(JSON.stringify(response, null, 2));
-        throw new Error("Got 429 error but can't retrieve ratelimit_reset: quitting");
+        self.logger.info("Got 429 error but can't retrieve ratelimit_reset");
       }
-
-      if (!limitHeader || !resetTimeHeader) {
-        return;
-      }
-
-      return true;
     }
-    return false;
   }
 
   function handleResponseTime(responseTime) {
@@ -375,58 +362,52 @@ module.exports = function () {
 
     return new Promise((resolve, reject) => {
       const startTime = Date.now();
-
-      request(
-        {
-          method: 'GET',
-          url: 'https://api.openalex.org/works',
-          timeout: 60000,
+      self.logger.info(`OpenAlex: request API with ${values.length} ${property}`);
+      axios
+        .get('https://api.openalex.org/works', {
           headers: queryHeaders,
-          json: true,
-          qs: {
+          params: {
             // use filter to list the doi we want to retrieve
             //filter=doi:https://doi.org/10.1371/journal.pone.0266781|https://doi.org/10.1371/journal.pone.0267149
             filter: `${property}:${values.join('|')}`,
             // use select to get only the needed field
-            select: uniq([...neededOpenAlexFields, 'doi']).join(','),
+            select: uniq([
+              ...neededOpenAlexFields.map((f) => OpenAlexFields[f].openAlexField),
+              'doi',
+            ]).join(','),
             // make sure to retrieve the maximum amount of element
             'per-page': packetSize,
           },
-        },
-        (err, response, body) => {
-          handleOpenAlexRateLimit(response);
-          handleResponseTime(Date.now() - startTime);
-
-          if (err) {
-            return reject(err);
-          }
-
-          const status = response && response.statusCode;
-
-          if (!status) {
-            return reject(new Error('request failed with no status code'));
-          }
-          if (status === 401) {
-            return reject(new Error('authentication error (is the token valid?)'));
-          }
-          if (status >= 400) {
-            return reject(new Error(`request failed with status ${status}`));
-          }
-
-          const list = body && body.message && body.message.results;
-
-          if (!Array.isArray(list)) {
-            return reject(new Error('got invalid response from the API'));
-          }
-
+          timeout: 60000,
+        })
+        .then((response) => {
           // request succeeded: get throttle to default
           if (throttle !== defaultThrottle) {
             throttle = defaultThrottle;
           }
-
-          return resolve(list);
-        },
-      );
+          return resolve(response.data.results);
+        })
+        .catch((error) => {
+          if (axios.isAxiosError(error)) {
+            if (error.response && error.response.status === 429) {
+              // we reached a rate limit
+              handleOpenAlexRateLimit(error.response);
+              reject(new Error('Rate limit received from OpenAlex'));
+            } else if (error.code === 'ECONNABORTED') {
+              //timeout
+              reject(new Error('OpenAlex: API timeout'));
+            } else {
+              reject(
+                new Error(
+                  `OpenAlex: Error ${error.status} from API with call ${error.message}`, // ${JSON.stringify(error.toJSON(), null, 2)}`
+                ),
+              );
+            }
+          } else reject(error);
+        })
+        .finally(() => {
+          handleResponseTime(Date.now() - startTime);
+        });
     });
   }
 
@@ -449,6 +430,6 @@ module.exports = function () {
     if (!item) {
       return;
     }
-    return { ...ec, ...ecFromOpenAlexWork(item) };
+    updateEcWithOpenAlexWork(ec, item);
   }
 };
