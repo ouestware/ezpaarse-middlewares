@@ -182,14 +182,14 @@ module.exports = function () {
     return new Promise((resolve, reject) => {
       if (!identifier) { return resolve(); }
 
-      cache.get(identifier, (err, cachedDocid) => {
+      cache.get(identifier, (err, cachedDoc) => {
         if (err) { return reject(err); }
-        resolve(cachedDocid);
+        resolve(cachedDoc);
       });
     });
   }
 
-  function drainBuffer(callback) {
+  function drainBuffer() {
     return co(function* () {
 
       while (buffer.length >= bufferSize || (finalCallback && buffer.length > 0)) {
@@ -241,11 +241,11 @@ module.exports = function () {
             // On merge les tampons de toutes les versions du même document
             currentDoc['collId_i'] = (currentDoc.collId_i || []).concat(doc.collId_i || []);
 
-            continue;
           }
-
-          results.set(doc.docid.toString(), doc);
-          results.set(doc.halId_s.toString(), doc);
+          else {
+            results.set(doc.docid.toString(), doc);
+            results.set(doc.halId_s.toString(), doc);
+          }
         }
 
         for (let [ec, done] of packet.ecs) {
@@ -256,10 +256,14 @@ module.exports = function () {
 
           let relatedDoc = null;
 
-          if (results.has(ec.hal_identifiant) || results.has(ec.hal_docid)) {
-            relatedDoc = results.get(ec.hal_identifiant) || results.get(ec.hal_docid);
-
-          } else if (ec.hal_identifiant) {
+          if (ec.hal_identifiant && results.has(ec.hal_identifiant))
+            relatedDoc = results.get(ec.hal_identifiant)
+          
+          if(relatedDoc === null && ec.hal_docid &&  results.has(ec.hal_docid)) {
+            relatedDoc = results.get(ec.hal_docid);
+          } 
+          
+          if (relatedDoc === null && ec.hal_identifiant) {
             // Dans le cas où on ne trouve pas l'identifiant dans l'index,
             // on cherche une correspondance avec un identifiant fusionné
 
@@ -311,7 +315,8 @@ module.exports = function () {
       if (doc) {
         ec['hal_docid']         = doc.docid;
         ec['hal_identifiant']   = doc.halId_s;
-        ec['hal_doi']           = doc.doiId_s;
+        if(doc.doiId_s)
+          ec['hal_doi']         = doc.doiId_s;
         ec['publication_title'] = (doc.title_s || [''])[0];
         ec['hal_tampons']       = (doc.collId_i || []).join(',');
         ec['hal_tampons_name']  = (doc.collCode_s || []).join(',');
@@ -320,7 +325,7 @@ module.exports = function () {
         sidDepot = doc.sid_i;
 
         // Formatage du document à mettre en cache
-        cacheDoc = [];
+        cacheDoc = {};
         cacheDoc['hal_docid']         = ec.hal_docid;
         cacheDoc['hal_doi']           = ec.hal_doi;
         cacheDoc['hal_identifiant']   = ec.hal_identifiant;
@@ -428,6 +433,7 @@ module.exports = function () {
         rows: packetSize * 2,
         core: 'search'
       };
+      self.logger.info(`HAL: query API for ${identifiants.length + docids.length} documents`);
 
       methal.find(search, opts, (err, docs) => {
         if (err) {
@@ -558,7 +564,7 @@ module.exports = function () {
 //      return toreturn;
 //    });
 //  }
-  function getSite(sitename, returnParam) {
+  function getSite(sitename) {
     return co(function* () {
 
       // Récupération du sid ou nom dans le cache si possible

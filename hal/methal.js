@@ -99,7 +99,7 @@ exports.findOne = function (search, options, callback) {
   exports.query(search, options, function (err, result) {
     if (err) { return callback(err); }
 
-    if (result.response && Array.isArray(result.response.docs)) {
+    if (result.response && Array.isArray(result.response.docs) && result.response.docs.length === 1) {
       callback(null, result.response.docs[0]);
     } else {
       callback(new Error('unexpected result, documents not found'));
@@ -124,7 +124,7 @@ exports.query = function (search, options, callback) {
   const query = (typeof search === 'string' ? search : buildQuery(search, 'AND') || '*:*');
 
   const requestOptions = {};
-  if (options.hasOwnProperty('proxy')) {
+  if (options.proxy) {
     requestOptions.proxy = options.proxy;
     delete options.proxy;
   }
@@ -136,7 +136,7 @@ exports.query = function (search, options, callback) {
 
   let url = (!options.core || options.core == 'hal')
 	? `http://ccsdsolrnodevipint.in2p3.fr:8983/solr/hal/apiselectall?wt=json&q=${encodeURIComponent(query)}`
-	: `http://api.archives-ouvertes.fr/${options.core}?wantDeprecated=true`;
+	: `http://api.archives-ouvertes.fr/${options.core}/?wt=json&q=${encodeURIComponent(query)}`;
 
   // for convenience, add fields as an alias for fl
   if (options.fields) {
