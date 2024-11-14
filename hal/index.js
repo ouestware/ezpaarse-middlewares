@@ -10,7 +10,7 @@ let methal;
  */
 
 // eslint-disable-next-line global-require
-methal = require('./methal');
+methal = require('@ezpaarse-project/methal');
 
 
 /**
@@ -215,7 +215,6 @@ module.exports = function () {
           try {
             docs = yield queryHal(Array.from(packet.identifiants), Array.from(packet.docids));
           } catch (e) {
-            self.logger.error(methal);
             self.logger.error(`hal: ${e.message}`);
           }
 
@@ -436,6 +435,8 @@ module.exports = function () {
       self.logger.info(`HAL: query API for ${identifiants.length + docids.length} documents`);
 
       methal.find(search, opts, (err, docs) => {
+        self.logger.info(err);
+        self.logger.info(`found ${docs? docs.length : 'BUG'} docs`);
         if (err) {
           report.inc('general', 'hal-fails');
           return reject(err);

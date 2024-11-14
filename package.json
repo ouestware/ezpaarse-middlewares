@@ -20,7 +20,7 @@
     "mocha": "^10.7.3"
   },
   "dependencies": {
-    "@ezpaarse-project/methal": "file:../../ezpaarse-methal",
+    "@ezpaarse-project/methal": "https://github.com/ouestware/MetHAL#ae928e6b27628c12aec519abd98e0c3c207b5b6b",
     "co": "^4.6.0",
     "crossref": "^1.2.1",
     "node-istex": "^1.3.0",
