@@ -23,6 +23,7 @@ module.exports = function () {
 //  const activated    = (methal !== null) && /^true$/i.test(req.header('hal-enrich'));
   const activated    = !/^false$/i.test(req.header('hal-enrich'));
   const cacheEnabled = !/^false$/i.test(req.header('hal-cache'));
+  let siteCacheReady = false;
 
   if (!activated) { return function (ec, next) { next(); }; }
 
@@ -565,19 +566,9 @@ module.exports = function () {
 //      return toreturn;
 //    });
 //  }
-  function getSite(sitename) {
-    return co(function* () {
 
-      // Récupération du sid ou nom dans le cache si possible
-      let sitetofind = sitename.toString().replace(/https?:\/\//, '');
-      let cachedParam = yield checkCache(sitename.toString().replace('/https?:\/\//', ''));
-
-      if (cachedParam) {
-        return cachedParam;
-      }
-      self.logger.error(`Site not found in cache : ${sitename}`);
-
-      let tocache;
+  async function buildSiteCache(){
+    let tocache;
       let tries = 0;
 
       // Récupération du sid depuis l'API de HAL
@@ -587,7 +578,7 @@ module.exports = function () {
         }
 
         try {
-          let sites = yield querySitesHal();
+          let sites = await querySitesHal();
           if (!sites) {
             self.logger.error(`No site found for sitename ${sitename}`);
             tocache = 0;
@@ -600,30 +591,43 @@ module.exports = function () {
           self.logger.error(`Query ref_site Hal failed : ${e.message} for sitename : ${sitename}`);
         }
 
-        yield wait();
+        await wait();
       }
 
 
-      let toreturn;
       try {
         // On cache à la fois la correspondance ID=>Name et Name=>ID
-	for (var site of tocache) {
-	  let url = site.url.replace(/https?:\\?\/\\?\//, '');
-          yield cacheResult(site.id.toString(), url);
-          yield cacheResult(url, site.id.toString());
-          if (sitename == site.id.toString()) {
-            toreturn = site.url;
-	  }
-          if (sitename == site.url) {
-            toreturn = site.id;
-	  }
+        for (var site of tocache) {
+          let url = site.url.replace(/https?:\\?\/\\?\//, '');
+                await cacheResult(site.id.toString(), url);
+                await cacheResult(url, site.id.toString());
         };
       } catch (e) {
         report.inc('general', 'hal-cache-fail');
+        return false;
       }
 
-      return toreturn;
-    });
+      return true;
+    
+  }
+
+  function getSite(sitename) {
+    return co(function* () {
+      
+      if(!siteCacheReady){
+        siteCacheReady = yield buildSiteCache();
+      }
+
+      // Récupération du sid ou nom dans le cache si possible
+      let sitetofind = sitename.toString().replace(/https?:\/\//, '');
+      let cachedParam = yield checkCache(sitename.toString().replace('/https?:\/\//', ''));
+
+      if (cachedParam) {
+        return cachedParam;
+      }
+      else return undefined;
+      }
+    );
   }
 
 
