@@ -16,7 +16,7 @@ const OpenAlexFields = {
   oa_doi: {
     openAlexField: 'doi',
     getEcData: (openAlexWork) =>
-      openAlexWork ? openAlexWork.doi.replace('https://doi.org/', '') : '',
+      openAlexWork && openAlexWork.doi ? openAlexWork.doi.replace('https://doi.org/', '') : '',
   },
   oa_type: {
     openAlexField: 'type',
